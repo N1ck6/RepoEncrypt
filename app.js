@@ -17,6 +17,7 @@ class CryptoEncoder {
         this.mode = null; // 'encrypt' or 'decrypt'
         this.files = [];
         this.currentFile = null;
+        this.folderStates = {}; // Track expanded/collapsed folders
         
         this.init();
     }
@@ -36,7 +37,7 @@ class CryptoEncoder {
         // Цифры
         '0123456789'.split('').forEach(c => chars[index++] = c);
         
-        // Символы программирования и клавиатуры
+        // Символы программирования и клавиатуры (включая пробел!)
         const symbols = ' \n\t!@#$%^&*()_+-=[]{}|;\':",.<>?/\\`~';
         symbols.split('').forEach(c => chars[index++] = c);
         
@@ -53,6 +54,25 @@ class CryptoEncoder {
         document.getElementById('back-btn').addEventListener('click', () => this.goBack());
         document.getElementById('download-zip').addEventListener('click', () => this.downloadZIP());
         document.getElementById('download-file').addEventListener('click', () => this.downloadCurrentFile());
+        
+        // Toggle password visibility
+        document.getElementById('toggle-password').addEventListener('click', () => this.togglePasswordVisibility());
+    }
+    
+    togglePasswordVisibility() {
+        const input = document.getElementById('passphrase');
+        const eyeIcon = document.querySelector('.eye-icon');
+        const eyeOffIcon = document.querySelector('.eye-off-icon');
+        
+        if (input.type === 'password') {
+            input.type = 'text';
+            eyeIcon.style.display = 'none';
+            eyeOffIcon.style.display = 'block';
+        } else {
+            input.type = 'password';
+            eyeIcon.style.display = 'block';
+            eyeOffIcon.style.display = 'none';
+        }
     }
     
     showLoading(text = 'Загрузка...') {
@@ -64,24 +84,35 @@ class CryptoEncoder {
         document.getElementById('loading-overlay').style.display = 'none';
     }
     
+    showToast(message, type = 'success') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+    
     async startProcess(mode) {
         const repoUrl = document.getElementById('repo-url').value.trim();
         const passphrase = document.getElementById('passphrase').value;
         
         if (!repoUrl) {
-            alert('Пожалуйста, введите ссылку на репозиторий');
+            this.showToast('Пожалуйста, введите ссылку на репозиторий', 'error');
             return;
         }
         
         if (!passphrase) {
-            alert('Пожалуйста, введите кодовое слово');
+            this.showToast('Пожалуйста, введите кодовое слово', 'error');
             return;
         }
         
         // Parse GitHub URL
         const repoInfo = this.parseGitHubUrl(repoUrl);
         if (!repoInfo) {
-            alert('Неверная ссылка на GitHub репозиторий');
+            this.showToast('Неверная ссылка на GitHub репозиторий', 'error');
             return;
         }
         
@@ -96,7 +127,7 @@ class CryptoEncoder {
             this.showWorkspace();
         } catch (error) {
             this.hideLoading();
-            alert('Ошибка загрузки репозитория: ' + error.message);
+            this.showToast('Ошибка загрузки репозитория: ' + error.message, 'error');
         }
     }
     
@@ -116,25 +147,28 @@ class CryptoEncoder {
     }
     
     async loadRepoFiles(owner, repo) {
-        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`;
+        // Try different branches
+        const branches = ['main', 'master', 'develop'];
+        let treeData = null;
         
-        try {
-            const response = await fetch(apiUrl);
-            if (!response.ok) {
-                // Try master branch
-                const response2 = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`);
-                if (!response2.ok) {
-                    throw new Error('Не удалось получить доступ к репозиторию');
+        for (const branch of branches) {
+            try {
+                const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+                const response = await fetch(apiUrl);
+                if (response.ok) {
+                    treeData = await response.json();
+                    break;
                 }
-                const data2 = await response2.json();
-                this.processTreeData(data2.tree);
-                return;
+            } catch (error) {
+                continue;
             }
-            const data = await response.json();
-            this.processTreeData(data.tree);
-        } catch (error) {
-            throw error;
         }
+        
+        if (!treeData) {
+            throw new Error('Не удалось получить доступ к репозиторию. Проверьте, что он публичный.');
+        }
+        
+        this.processTreeData(treeData.tree);
     }
     
     processTreeData(tree) {
@@ -149,6 +183,12 @@ class CryptoEncoder {
         
         document.getElementById('repo-name').textContent = this.repoUrl.split('/').slice(-2).join('/');
         document.getElementById('repo-link').href = this.repoUrl;
+        
+        // Update stats
+        const totalFiles = this.files.length;
+        const supportedFiles = this.files.filter(f => f.isSupported).length;
+        document.getElementById('total-files').textContent = totalFiles;
+        document.getElementById('encrypted-files').textContent = supportedFiles;
         
         this.renderFileTree();
         this.hideLoading();
@@ -169,6 +209,14 @@ class CryptoEncoder {
     isImageFile(path) {
         const ext = path.split('.').pop().toLowerCase();
         return this.imageExtensions.includes(ext);
+    }
+    
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
     
     renderFileTree() {
@@ -213,10 +261,9 @@ class CryptoEncoder {
             const isFile = !!item.__file__;
             const fullPath = path ? `${path}/${key}` : key;
             
-            const div = document.createElement('div');
-            
             if (isFile) {
                 const file = item.__file__;
+                const div = document.createElement('div');
                 div.className = 'file-tree-item';
                 div.dataset.path = fullPath;
                 
@@ -229,27 +276,56 @@ class CryptoEncoder {
                     div.dataset.type = 'image';
                 }
                 
+                // Mark encrypted files in decrypt mode
+                if (this.mode === 'decrypt' && file.isSupported) {
+                    div.classList.add('encrypted');
+                }
+                
                 div.addEventListener('click', () => this.selectFile(file));
+                container.appendChild(div);
             } else {
                 // Folder
+                const div = document.createElement('div');
                 div.className = 'file-tree-item folder';
-                div.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg><span>${key}</span>`;
+                
+                const folderIcon = '<svg class="icon folder-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>';
+                div.innerHTML = `${folderIcon}<span>${key}</span>`;
                 
                 const childrenDiv = document.createElement('div');
                 childrenDiv.className = 'file-tree-children';
                 
+                // Check if folder was previously expanded
+                const isExpanded = this.folderStates[fullPath] !== false;
+                if (!isExpanded) {
+                    childrenDiv.classList.add('collapsed');
+                } else {
+                    div.classList.add('expanded');
+                }
+                
                 div.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    childrenDiv.style.display = childrenDiv.style.display === 'none' ? 'block' : 'none';
+                    this.toggleFolder(fullPath, div, childrenDiv);
                 });
                 
                 container.appendChild(div);
                 this.renderTreeItem(item, childrenDiv, fullPath);
-                return;
+                container.appendChild(childrenDiv);
             }
-            
-            container.appendChild(div);
         });
+    }
+    
+    toggleFolder(path, folderDiv, childrenDiv) {
+        const isCollapsed = childrenDiv.classList.contains('collapsed');
+        
+        if (isCollapsed) {
+            childrenDiv.classList.remove('collapsed');
+            folderDiv.classList.add('expanded');
+            this.folderStates[path] = true;
+        } else {
+            childrenDiv.classList.add('collapsed');
+            folderDiv.classList.remove('expanded');
+            this.folderStates[path] = false;
+        }
     }
     
     getFileIcon(type) {
@@ -271,11 +347,20 @@ class CryptoEncoder {
         document.querySelector(`[data-path="${file.path}"]`)?.classList.add('active');
         
         document.getElementById('current-file-path').textContent = file.path;
+        document.getElementById('file-size').textContent = this.formatFileSize(file.size);
         document.getElementById('welcome-message').style.display = 'none';
         document.getElementById('file-editor').style.display = 'none';
         document.getElementById('file-preview').style.display = 'none';
         document.getElementById('image-preview').style.display = 'none';
         document.getElementById('download-file').style.display = 'none';
+        
+        // Update download button text based on mode
+        const downloadBtnText = document.getElementById('download-btn-text');
+        if (this.mode === 'encrypt') {
+            downloadBtnText.textContent = 'Скачать зашифрованный';
+        } else {
+            downloadBtnText.textContent = 'Скачать';
+        }
         
         if (file.type === 'image') {
             await this.loadAndDisplayImage(file);
@@ -335,7 +420,7 @@ class CryptoEncoder {
             const editor = document.getElementById('file-editor');
             editor.value = displayContent;
             editor.style.display = 'block';
-            editor.readOnly = this.mode === 'decrypt' && isEncrypted;
+            editor.readOnly = true;
             
             document.getElementById('download-file').style.display = 'inline-flex';
         } catch (error) {
@@ -450,14 +535,16 @@ class CryptoEncoder {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+            
+            this.showToast('Файл скачан', 'success');
         } catch (error) {
-            alert('Ошибка скачивания файла: ' + error.message);
+            this.showToast('Ошибка скачивания файла: ' + error.message, 'error');
         }
     }
     
     async downloadZIP() {
         if (this.mode !== 'encrypt') {
-            alert('Скачивание ZIP доступно только в режиме шифрования');
+            this.showToast('Скачивание ZIP доступно только в режиме шифрования', 'error');
             return;
         }
         
@@ -465,9 +552,11 @@ class CryptoEncoder {
         
         try {
             const zip = new JSZip();
+            let processedCount = 0;
             
             for (const file of this.files) {
-                this.showLoading(`Обработка: ${file.path}`);
+                processedCount++;
+                this.showLoading(`Обработка: ${file.path} (${processedCount}/${this.files.length})`);
                 
                 try {
                     const content = await this.fetchFileContent(file.path);
@@ -498,8 +587,10 @@ class CryptoEncoder {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+            
+            this.showToast('ZIP архив успешно создан!', 'success');
         } catch (error) {
-            alert('Ошибка создания ZIP: ' + error.message);
+            this.showToast('Ошибка создания ZIP: ' + error.message, 'error');
         } finally {
             this.hideLoading();
         }
@@ -517,11 +608,13 @@ class CryptoEncoder {
         // Reset state
         this.files = [];
         this.currentFile = null;
+        this.folderStates = {};
         document.getElementById('file-tree').innerHTML = '';
         document.getElementById('welcome-message').style.display = 'flex';
         document.getElementById('file-editor').style.display = 'none';
         document.getElementById('file-preview').style.display = 'none';
         document.getElementById('image-preview').style.display = 'none';
+        document.getElementById('file-size').textContent = '';
     }
 }
 
