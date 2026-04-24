@@ -13,7 +13,7 @@
     --warning: #fbbf24;
     --error: #f87171;
     --border-color: #3a3a5c;
-    --sidebar-width: 280px;
+    --sidebar-width: 300px;
     --header-height: 50px;
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -112,6 +112,39 @@ body {
     outline: none;
     border-color: var(--accent-primary);
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrapper input {
+    padding-right: 3rem;
+}
+
+.toggle-password-btn {
+    position: absolute;
+    right: 0.75rem;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.toggle-password-btn:hover {
+    color: var(--text-primary);
+}
+
+.toggle-password-btn svg {
+    width: 20px;
+    height: 20px;
 }
 
 .button-group {
@@ -223,6 +256,9 @@ body {
 .sidebar-header h3 {
     font-size: 1rem;
     color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .icon-btn {
@@ -233,11 +269,38 @@ body {
     padding: 0.5rem;
     border-radius: 4px;
     transition: var(--transition);
+    flex-shrink: 0;
 }
 
 .icon-btn:hover {
     background: var(--bg-tertiary);
     color: var(--text-primary);
+}
+
+.sidebar-stats {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    gap: 1rem;
+    font-size: 0.875rem;
+}
+
+.stat-item {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.stat-label {
+    color: var(--text-muted);
+}
+
+.stat-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.stat-value.encrypted-count {
+    color: var(--success);
 }
 
 .file-tree {
@@ -278,10 +341,22 @@ body {
     font-weight: 500;
 }
 
+.file-tree-item.folder .folder-icon {
+    transition: transform 0.2s ease;
+}
+
+.file-tree-item.folder.expanded .folder-icon {
+    transform: rotate(90deg);
+}
+
 .file-tree-children {
     margin-left: 1.25rem;
     border-left: 1px solid var(--border-color);
     padding-left: 0.5rem;
+}
+
+.file-tree-children.collapsed {
+    display: none;
 }
 
 .sidebar-footer {
@@ -322,9 +397,32 @@ body {
     padding: 0 1rem;
 }
 
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
 .file-path {
     color: var(--text-secondary);
     font-size: 0.875rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 400px;
+}
+
+.file-size {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    background: var(--bg-tertiary);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.editor-actions {
+    display: flex;
+    gap: 0.5rem;
 }
 
 .editor-container {
@@ -342,10 +440,17 @@ body {
     height: 100%;
     color: var(--text-muted);
     gap: 1rem;
+    padding: 2rem;
+    text-align: center;
 }
 
 .welcome-message svg {
     opacity: 0.5;
+}
+
+.welcome-message .hint {
+    font-size: 0.875rem;
+    opacity: 0.7;
 }
 
 .file-editor {
@@ -483,3 +588,43 @@ body {
 .file-tree-item[data-type="json"] { color: #f7df1e; }
 .file-tree-item[data-type="md"] { color: #083fa1; }
 .file-tree-item[data-type="image"] { color: #10b981; }
+
+/* Encrypted file indicator */
+.file-tree-item.encrypted::after {
+    content: '🔒';
+    font-size: 0.75rem;
+    margin-left: auto;
+}
+
+/* Toast notifications */
+.toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.3s ease;
+    z-index: 1001;
+}
+
+.toast.error {
+    border-left: 4px solid var(--error);
+}
+
+.toast.success {
+    border-left: 4px solid var(--success);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
